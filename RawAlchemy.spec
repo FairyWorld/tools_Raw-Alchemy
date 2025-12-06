@@ -32,7 +32,7 @@ a = Analysis(
     ['src/raw_alchemy/gui.py'],
     pathex=[],
     binaries=binaries_list,
-    datas=[('src/raw_alchemy/vendor', 'vendor'), ('icon.ico', '.')],
+    datas=[('src/raw_alchemy/vendor', 'vendor'), ('icon.ico', '.'), ('icon.png', '.')],
     hiddenimports=['tkinter'],
     hookspath=[],
     hooksconfig={},

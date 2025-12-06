@@ -27,9 +27,17 @@ class GuiApplication(tk.Frame):
         
         # Set Icon
         try:
-            # For Windows, iconbitmap is the standard way to set the window icon from an .ico file.
-            icon_path = resource_path("icon.ico")
-            self.master.iconbitmap(icon_path)
+            if sys.platform.startswith('win'):
+                # On Windows, iconbitmap is the standard way.
+                icon_path = resource_path("icon.ico")
+                self.master.iconbitmap(icon_path)
+            else:
+                # On other platforms (Linux, macOS), PhotoImage is used.
+                # It doesn't support .ico, so a .png or .gif is needed.
+                # PyInstaller needs to be configured to include this file.
+                icon_path = resource_path("icon.png")
+                icon_image = tk.PhotoImage(file=icon_path)
+                self.master.iconphoto(True, icon_image)
         except Exception as e:
             print(f"Error loading window icon: {e}")
 

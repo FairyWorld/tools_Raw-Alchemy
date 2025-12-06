@@ -98,7 +98,7 @@ a = Analysis(
     ['src/raw_alchemy/gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('src/raw_alchemy/vendor', 'vendor'), ('icon.ico', '.')],
+    datas=[('src/raw_alchemy/vendor', 'vendor'), ('icon.ico', '.'), ('icon.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
