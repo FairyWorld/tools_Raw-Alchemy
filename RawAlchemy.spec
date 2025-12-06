@@ -65,62 +65,37 @@ if sys.platform == 'darwin':
 pyz = PYZ(a.pure)
 
 # Platform-specific EXE and BUNDLE for macOS .app creation
+# Create a one-file executable.
+# Binaries and data are included directly in the EXE for a one-file build.
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='RawAlchemy',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=strip_executable,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    # Set the icon based on the platform.
+    icon='icon.icns' if sys.platform == 'darwin' else 'icon.ico',
+)
+
+# If on macOS, bundle the one-file executable into a .app directory.
+# This is required for a proper GUI application on macOS.
 if sys.platform == 'darwin':
-    # For macOS, create a one-folder bundle (.app)
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        name='RawAlchemy',
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=strip_executable,
-        upx=False,
-        runtime_tmpdir=None,
-        console=False,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-        icon='icon.icns',
-    )
-    # The COLLECT name must be different from the EXE name to avoid a file/directory name collision in the dist/ folder.
-    # BUNDLE will use this folder to create the final .app with the correct name.
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.datas,
-        strip=strip_executable,
-        upx=False,
-        name='RawAlchemy_COLLECT',
-    )
     app = BUNDLE(
-        coll,
+        exe,
         name='RawAlchemy.app',
         icon='icon.icns',
         bundle_identifier=None,
-    )
-else:
-    # For Windows and Linux, create a one-file executable
-    exe = EXE(
-        pyz,
-        a.scripts,
-        a.binaries,
-        a.datas,
-        [],
-        name='RawAlchemy',
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=strip_executable,
-        upx=False,
-        upx_exclude=[],
-        runtime_tmpdir=None,
-        console=False,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-        icon='icon.ico',
     )

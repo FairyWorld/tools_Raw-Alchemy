@@ -97,7 +97,7 @@ jobs:
       - name: Install macOS system dependencies
         run: |
           brew install libraw
-          brew install create-dmg
+          brew install create-dmg python-tk@3.12
 
       - name: Convert PNG to ICNS for macOS icon
         run: |
