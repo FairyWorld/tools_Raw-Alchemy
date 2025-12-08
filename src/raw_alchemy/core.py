@@ -8,9 +8,17 @@ import pillow_heif
 import os
 from typing import Optional
 
-from . import utils
+# 尝试导入同级目录下的 utils，如果失败则尝试绝对导入 (方便不同运行环境调试)
+try:
+    from . import utils
+except ImportError:
+    import utils
 
-# 1. 映射：Log 空间名称 -> 对应的线性色域 (Linear Gamut)
+# ==========================================
+#              1. 常量定义 & 映射表
+# ==========================================
+
+# 映射：Log 空间名称 -> 对应的线性色域 (Linear Gamut)
 LOG_TO_WORKING_SPACE = {
     'F-Log': 'F-Gamut',
     'F-Log2': 'F-Gamut',
@@ -26,21 +34,13 @@ LOG_TO_WORKING_SPACE = {
     'Log3G10': 'REDWideGamutRGB',
 }
 
-# 2. 映射：复合名称 -> colour 库识别的 Log 编码函数名称
-# 例如：S-Log3.Cine 使用的是 S-Gamut3.Cine 色域，但曲线依然是 S-Log3
+# 映射：复合名称 -> colour 库识别的 Log 编码函数名称
 LOG_ENCODING_MAP = {
     'S-Log3.Cine': 'S-Log3',
     'F-Log2C': 'F-Log2',
-    # 其他名称如果跟 colour 库一致，可以在代码逻辑中直接 fallback
 }
 
-# 3. 映射：用户友好的 LUT 空间名 -> colour 库标准名称
-LUT_SPACE_MAP = {
-    "Rec.709": "ITU-R BT.709",
-    "Rec.2020": "ITU-R BT.2020",
-}
-
-# 4. 测光模式选项
+# 测光模式选项
 METERING_MODES = [
     'average',        # 几何平均 (默认)
     'center-weighted',# 中央重点
@@ -48,38 +48,45 @@ METERING_MODES = [
     'hybrid',         # 混合 (平均 + 高光限制)
 ]
 
+# ==========================================
+#              2. 核心处理函数
+# ==========================================
+
 def process_image(
     raw_path: str,
     output_path: str,
     log_space: str,
     lut_path: Optional[str],
-    exposure: Optional[float] = None, # 如果是 None 则自动，如果是数字则手动
+    exposure: Optional[float] = None, # None=自动, Float=手动EV
     lens_correct: bool = True,
     metering_mode: str = 'hybrid',
     custom_db_path: Optional[str] = None,
-    log_queue: Optional[object] = None, # 用于多进程日志记录
+    log_queue: Optional[object] = None, # 多进程通信队列
 ):
-    import os
     filename = os.path.basename(raw_path)
 
+    # 内部日志辅助函数
     def _log(message):
         if log_queue:
-            # 对于 GUI，发送结构化日志以避免混淆
-            log_queue.put({'id': filename, 'msg': message})
+            # 发送结构化日志：{'id':文件名, 'msg':消息}
+            # 注意：如果是 Queue 对象，使用 .put()
+            if hasattr(log_queue, 'put'):
+                log_queue.put({'id': filename, 'msg': message})
+            else:
+                # 兼容 CLI 模式传入 print 函数的情况
+                print(f"[{filename}] {message}")
         else:
-            # 对于 CLI，直接打印
-            print(message)
+            print(f"[{filename}] {message}")
 
     _log(f"🧪 [Raw Alchemy] Processing: {raw_path}")
 
-    # --- Step 1: 统一解码 (优化内存) ---
+    # --- Step 1: 解码 RAW (统一至 ProPhoto RGB / 16-bit Linear) ---
     _log(f"  🔹 [Step 1] Decoding RAW...")
     with rawpy.imread(raw_path) as raw:
-        # --- Step 1.1: 提取 EXIF ---
-        # 在解码前提取，即使解码失败也能获取信息
+        # 提取 EXIF (用于镜头校正)
         exif_data = utils.extract_lens_exif(raw, logger=_log)
 
-        # --- Step 1.2: 解码 ---
+        # 解码: 必须使用 16-bit 以保留 Log 转换所需的动态范围
         prophoto_linear = raw.postprocess(
             gamma=(1, 1),
             no_auto_bright=True,
@@ -87,32 +94,28 @@ def process_image(
             output_bps=16,
             output_color=rawpy.ColorSpace.ProPhoto,
             bright=1.0,
-            highlight_mode=2,
+            highlight_mode=2, # 2=Blend (防止高光死白)
             demosaic_algorithm=rawpy.DemosaicAlgorithm.AAHD,
         )
+        # 转为 Float32 (0.0 - 1.0) 进行数学运算
         img = prophoto_linear.astype(np.float32) / 65535.0
-        del prophoto_linear # <--- 关键：立即释放巨大的 uint16 数组
-        gc.collect()        # <--- 强制回收
+        
+        # 立即释放内存
+        del prophoto_linear 
+        gc.collect()
 
     source_cs = colour.RGB_COLOURSPACES['ProPhoto RGB']
 
-    # --- Step 2: 曝光控制 (二选一) ---
-    # 定义最终使用的增益 gain
+    # --- Step 2: 曝光控制 ---
     gain = 1.0
-
     if exposure is not None:
-        # === 路径 A: 手动曝光 ===
+        # 路径 A: 手动曝光
         _log(f"  🔹 [Step 2] Manual Exposure Override ({exposure:+.2f} stops)")
         gain = 2.0 ** exposure
-        
-        # 应用增益
         utils.apply_gain_inplace(img, gain)
-
     else:
-        # === 路径 B: 自动测光 ===
+        # 路径 B: 自动测光
         _log(f"  🔹 [Step 2] Auto Exposure ({metering_mode})")
-        
-        # 为了复用 utils 里的函数 (假设它们返回的是处理后的图)，我们直接调用
         if metering_mode == 'center-weighted':
             img = utils.auto_expose_center_weighted(img, source_cs, target_gray=0.18, logger=_log)
         elif metering_mode == 'highlight-safe':
@@ -120,10 +123,9 @@ def process_image(
         elif metering_mode == 'average':
             img = utils.auto_expose_linear(img, source_cs, target_gray=0.18, logger=_log)
         else:
-            # 默认混合模式
             img = utils.auto_expose_hybrid(img, source_cs, target_gray=0.18, logger=_log)
 
-    # --- Step 3: 镜头校正 ---
+    # --- Step 3: 镜头校正 & 风格化 ---
     if lens_correct:
         _log("  🔹 [Step 3] Applying Lens Correction...")
         img = utils.apply_lens_correction(
@@ -133,13 +135,11 @@ def process_image(
             logger=_log
         )
 
-
-    # 经验值：饱和度 1.15 ~ 1.25，对比度 1.0 ~ 1.1
-    # 这会让你的 RAW 转换结果在过 LUT 之前就拥有足够的"底料"
+    # 稍微增加饱和度和对比度，为 LUT 转换打底
     _log("  🔹 [Step 3.5] Applying Camera-Match Boost...")
     img = utils.apply_saturation_and_contrast(img, saturation=1.25, contrast=1.1)
 
-    # --- Step 4: 转换色彩空间 (Linear -> Log) ---
+    # --- Step 4: 色彩空间转换 (ProPhoto Linear -> Log) ---
     log_color_space_name = LOG_TO_WORKING_SPACE.get(log_space)
     log_curve_name = LOG_ENCODING_MAP.get(log_space, log_space)
     
@@ -148,7 +148,7 @@ def process_image(
 
     _log(f"  🔹 [Step 4] Color Transform (ProPhoto -> {log_color_space_name} -> {log_curve_name})")
 
-    # 4.1 Gamut 变换
+    # 4.1 Gamut 变换 (矩阵运算)
     M = colour.matrix_RGB_to_RGB(
         colour.RGB_COLOURSPACES['ProPhoto RGB'],
         colour.RGB_COLOURSPACES[log_color_space_name],
@@ -156,86 +156,97 @@ def process_image(
     if not img.flags['C_CONTIGUOUS']:
         img = np.ascontiguousarray(img)
     utils.apply_matrix_inplace(img, M)
-    # Log 编码前必须裁剪负值
-    np.maximum(img, 1e-6, out=img)
-
-    # 4.2 Curve 编码
+    
+    # 4.2 Log 编码
+    # Log 函数无法处理负值，需裁剪微小底噪
+    np.maximum(img, 1e-6, out=img) 
     img = colour.cctf_encoding(img, function=log_curve_name)
 
-    # --- Step 5: LUT (Numba In-Place) ---
+    # --- Step 5: 应用 LUT ---
     if lut_path:
-        _log(f"  🔹 [Step 5] Applying LUT {lut_path}...")
+        _log(f"  🔹 [Step 5] Applying LUT {os.path.basename(lut_path)}...")
         try:
             lut = colour.read_LUT(lut_path)
             
-            # 判断是否为标准的 3D LUT，如果是，则使用 Numba 加速
+            # 3D LUT 使用 Numba 加速
             if isinstance(lut, colour.LUT3D):
-                # 必须确保输入内存连续，否则 Numba 可能会变慢或报错
                 if not img.flags['C_CONTIGUOUS']:
                     img = np.ascontiguousarray(img)
                 
-                # 调用 Numba 核函数
-                utils.apply_lut_inplace(
-                    img, 
-                    lut.table, 
-                    lut.domain[0], 
-                    lut.domain[1]
-                )
+                utils.apply_lut_inplace(img, lut.table, lut.domain[0], lut.domain[1])
             else:
-                # 如果是 1D LUT 或 LUTSequence，回退到 colour 库自带方法
-                _log("    (Using standard colour library for non-3D LUT)")
+                # 1D LUT 使用 colour 库默认方法
                 img = lut.apply(img)
 
-            # LUT 后防溢出
+            # LUT 可能导致数值溢出，需裁剪到 [0.0, 1.0]
             np.clip(img, 0.0, 1.0, out=img)
             
         except Exception as e:
             _log(f"  ❌ [Error] applying LUT: {e}")
-            import traceback
-            traceback.print_exc()
 
-    # --- Step 6: 保存 ---
-    _log(f"  💾 Preparing to save to {output_path}...")
+    # --- Step 6: 保存 (关键优化部分) ---
+    _log(f"  💾 Saving to {os.path.basename(output_path)}...")
     
     file_ext = os.path.splitext(output_path)[1].lower()
-    output_image_uint16 = None # Initialize
+    output_image_uint16 = None
 
     try:
+        # === A. 16-bit TIFF (无损母版) ===
         if file_ext in ['.tif', '.tiff']:
-            _log("    Format: TIFF (16-bit, ZLIB compression)")
+            _log("    Format: TIFF (16-bit, ZLIB Optimized)")
             output_image_uint16 = (img * 65535).astype(np.uint16)
+            
             tifffile.imwrite(
                 output_path,
                 output_image_uint16,
                 photometric='rgb',
-                compression='zlib' # <--- 启用压缩
+                compression='zlib',
+                # 【优化】predictor=2 (水平差分) 大幅提升照片压缩率
+                predictor=2,       
+                # 【优化】level=8 平衡速度和体积
+                compressionargs={'level': 8} 
             )
+
+        # === B. 10-bit HEIF (高质量分享) ===
         elif file_ext in ['.heic', '.heif']:
-            _log("    Format: HEIF (10-bit, Lossless)")
+            _log("    Format: HEIF (10-bit, High Quality)")
             output_image_uint16 = (img * 65535).astype(np.uint16)
-            # 根据用户反馈，使用 pillow_heif.from_bytes 以获得更直接的控制
+            
+            # 使用 pillow_heif 直接写入
             heif_file = pillow_heif.from_bytes(
                 mode='RGB;16',
                 size=(output_image_uint16.shape[1], output_image_uint16.shape[0]),
                 data=output_image_uint16.tobytes()
             )
+            # 【优化】quality=-1 (无损/最高画质), bit_depth=10, 保持 4:4:4
             heif_file.save(output_path, quality=-1, bit_depth=10)
-        else:
-            # Fallback for common 8-bit formats like JPEG/PNG
-            _log(f"    Format: {file_ext.upper()} (8-bit)")
-            output_image_uint8 = (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
-            Image.fromarray(output_image_uint8).save(output_path)
 
-        _log(f"  ✅ Successfully saved to {output_path}")
+        # === C. 8-bit JPEG (通用预览) ===
+        else:
+            _log(f"    Format: {file_ext.upper()} (8-bit High Quality)")
+            # 转换为 8-bit
+            output_image_uint8 = (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
+            
+            # 针对 JPG 的特殊优化参数
+            save_params = {}
+            if file_ext in ['.jpg', '.jpeg']:
+                save_params = {
+                    'quality': 95,     # 【优化】拒绝 3MB 废片，提升画质
+                    'subsampling': 0,  # 【优化】4:4:4 采样，防止红色/文字模糊
+                    'optimize': True   # 开启 Huffman 优化
+                }
+            
+            Image.fromarray(output_image_uint8).save(output_path, **save_params)
+
+        _log(f"  ✅ Saved: {output_path}")
 
     except Exception as e:
         _log(f"  ❌ [Error] Failed to save file: {e}")
         import traceback
         traceback.print_exc()
     
-    # 显式清理
+    # --- 最终清理 ---
     del img
     if output_image_uint16 is not None:
         del output_image_uint16
     gc.collect()
-    _log("  ✅ Done.")
