@@ -389,12 +389,6 @@ class GuiApplication(tk.Frame):
 def launch_gui():
     multiprocessing.freeze_support()
     root = tk.Tk()
-    # 尝试设置高 DPI 缩放 (Windows)
-    try:
-        from ctypes import windll
-        windll.shcore.SetProcessDpiAwareness(1)
-    except:
-        pass
     
     app = GuiApplication(master=root)
     app.mainloop()
