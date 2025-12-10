@@ -138,6 +138,8 @@ def process_image(
             custom_db_path=custom_db_path,
             logger=_log
         )
+    else:
+        _log("  🔹 [Step 3] Skipping Lens Correction.")
 
     # 稍微增加饱和度和对比度，为 LUT 转换打底
     _log("  🔹 [Step 3.5] Applying Camera-Match Boost...")

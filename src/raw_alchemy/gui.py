@@ -98,19 +98,33 @@ class GuiApplication(tk.Frame):
         ttk.Entry(settings_frame, textvariable=self.lut_path_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=5)
         ttk.Button(settings_frame, text="Browse...", command=self.browse_lut).grid(row=1, column=3, sticky="ew", padx=5)
 
-        # Row 2: Lensfun
-        ttk.Label(settings_frame, text="Lens DB (XML):").grid(row=2, column=0, sticky="w", pady=5)
-        self.custom_lensfun_db_path_var = tk.StringVar()
-        ttk.Entry(settings_frame, textvariable=self.custom_lensfun_db_path_var).grid(row=2, column=1, columnspan=2, sticky="ew", padx=5)
-        ttk.Button(settings_frame, text="Browse...", command=self.browse_lensfun_db).grid(row=2, column=3, sticky="ew", padx=5)
-
-        # Row 3: CPU Jobs
-        ttk.Label(settings_frame, text="CPU Threads:").grid(row=3, column=0, sticky="w", pady=5)
+        # Row 2: CPU Jobs
+        ttk.Label(settings_frame, text="CPU Threads:").grid(row=2, column=0, sticky="w", pady=5)
         self.jobs_var = tk.IntVar(value=min(4, multiprocessing.cpu_count()))
-        ttk.Spinbox(settings_frame, from_=1, to=multiprocessing.cpu_count(), textvariable=self.jobs_var, width=5).grid(row=3, column=1, sticky="w", padx=5)
+        ttk.Spinbox(settings_frame, from_=1, to=multiprocessing.cpu_count(), textvariable=self.jobs_var, width=5).grid(row=2, column=1, sticky="w", padx=5)
 
         settings_frame.columnconfigure(1, weight=1)
         settings_frame.columnconfigure(2, weight=1)
+
+        # --- Frame for Lens Correction ---
+        lens_frame = ttk.LabelFrame(self, text="Lens Correction", padding=(10, 5))
+        lens_frame.pack(padx=10, pady=5, fill="x")
+
+        # Row 0: Toggle
+        self.lens_correction_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(lens_frame, text="Apply Lens Correction", variable=self.lens_correction_var, command=self.toggle_lens_db_controls).grid(row=0, column=0, columnspan=4, sticky="w", pady=5)
+
+        # Row 1: Lensfun DB
+        self.lens_db_label = ttk.Label(lens_frame, text="Lens DB (XML):")
+        self.lens_db_label.grid(row=1, column=0, sticky="w", pady=5)
+        self.custom_lensfun_db_path_var = tk.StringVar()
+        self.lens_db_entry = ttk.Entry(lens_frame, textvariable=self.custom_lensfun_db_path_var)
+        self.lens_db_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=5)
+        self.lens_db_button = ttk.Button(lens_frame, text="Browse...", command=self.browse_lensfun_db)
+        self.lens_db_button.grid(row=1, column=3, sticky="ew", padx=5)
+
+        lens_frame.columnconfigure(1, weight=1)
+        lens_frame.columnconfigure(2, weight=1)
 
         # --- Frame for Exposure ---
         exp_frame = ttk.LabelFrame(self, text="Exposure Control", padding=(10, 5))
@@ -145,6 +159,7 @@ class GuiApplication(tk.Frame):
         ttk.Entry(self.manual_opts_frame, textvariable=self.exposure_stops_var, width=6).pack(side="left", padx=5)
         
         self.toggle_exposure_controls()
+        self.toggle_lens_db_controls()
 
         # --- Log & Progress ---
         log_frame = ttk.Frame(self)
@@ -199,6 +214,12 @@ class GuiApplication(tk.Frame):
         else:
             for child in self.auto_opts_frame.winfo_children(): child.configure(state="disabled")
             for child in self.manual_opts_frame.winfo_children(): child.configure(state="normal")
+
+    def toggle_lens_db_controls(self):
+        state = "normal" if self.lens_correction_var.get() else "disabled"
+        self.lens_db_label.configure(state=state)
+        self.lens_db_entry.configure(state=state)
+        self.lens_db_button.configure(state=state)
 
     # --- Browsing ---
     def browse_input_file(self):
@@ -306,7 +327,7 @@ class GuiApplication(tk.Frame):
             'lut_path': self.lut_path_var.get() or None,
             'custom_db_path': self.custom_lensfun_db_path_var.get() or None,
             'jobs': self.jobs_var.get(),
-            'lens_correct': True
+            'lens_correct': self.lens_correction_var.get()
         }
         
         if self.exposure_mode_var.get() == "Manual":
