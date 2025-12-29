@@ -418,18 +418,33 @@ class PreviewWindow:
             
             max_val_rgb = 0
             colors = ['red', 'green', 'blue']
+            hists = []
+            
+            # 2. 【核心优化】计算 Y 轴上限时忽略“纯黑”和“纯白”的统计尖峰
+            valid_counts = []
+            for h in hists:
+                # 忽略 hist[0] (纯黑) 和 hist[-1] (纯白)
+                valid_counts.extend(h[1:-1])
+            
+            valid_counts = np.array(valid_counts)
+            if len(valid_counts) > 0 and valid_counts.max() > 0:
+                # 使用中间有效区域的 95% 分位数作为参考上限
+                max_val_rgb = np.percentile(valid_counts, 95) * 1.5
+                
+                # 保险逻辑：防止缩得太小，如果最大峰值太高，至少保证能看到它的 10%
+                absolute_max = max(h.max() for h in hists)
+                max_val_rgb = max(max_val_rgb, absolute_max * 0.1)
+            else:
+                max_val_rgb = max(h.max() for h in hists) if any(h.max() > 0 for h in hists) else 1
+
+            # 3. 绘制填充曲线
             for i, color in enumerate(colors):
-                hist, _ = np.histogram(sample[..., i], bins=bins, range=(0, 1), density=True)
-                # 绘制填充曲线
+                hist = hists[i]
                 self.rgb_hist_ax.plot(x, hist, color=color, linewidth=1, alpha=0.9)
                 self.rgb_hist_ax.fill_between(x, 0, hist, color=color, alpha=0.2)
-                
-                if hist.max() > max_val_rgb:
-                    max_val_rgb = hist.max()
             
-            if max_val_rgb > 0:
-                self.rgb_hist_ax.set_ylim(0, max_val_rgb * 1.1)
-                
+            # 4. 设置裁剪后的 Y 轴范围
+            self.rgb_hist_ax.set_ylim(0, max_val_rgb)
             self.rgb_hist_ax.axis('off')
             self.rgb_hist_fig.tight_layout(pad=0)
             self.rgb_hist_canvas.draw()
@@ -456,3 +471,4 @@ def open_preview_window(parent, raw_path: str, gui_app):
         PreviewWindow实例
     """
     return PreviewWindow(parent, raw_path, gui_app)
+
