@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 from tkinter import ttk
 import numpy as np
@@ -37,6 +38,20 @@ class PreviewWindow:
         self.window.title(f"Preview - {os.path.basename(raw_path)}")
         self.window.geometry("1200x800")
         
+        # --- Icon Setting ---
+        try:
+            if sys.platform.startswith('win'):
+                icon_path = utils.resource_path("icon.ico")
+                if os.path.exists(icon_path): self.window.iconbitmap(icon_path)
+            else:
+                icon_path = utils.resource_path("icon.png")
+                if os.path.exists(icon_path):
+                    icon_image = tk.PhotoImage(file=icon_path)
+                    self.window.iconphoto(True, icon_image)
+        except Exception as e:
+            print(f"Icon load warning: {e}")
+
+
         # 缓存的原始图像数据
         self.prophoto_linear = None  # 原始线性数据
         self.prophoto_corrected = None  # 镜头校正后的数据
@@ -420,6 +435,11 @@ class PreviewWindow:
             colors = ['red', 'green', 'blue']
             hists = []
             
+            # 1. 计算三个通道的原始数据
+            for i in range(3):
+                hist, _ = np.histogram(sample[..., i], bins=bins, range=(0, 1))
+                hists.append(hist)
+            
             # 2. 【核心优化】计算 Y 轴上限时忽略“纯黑”和“纯白”的统计尖峰
             valid_counts = []
             for h in hists:
@@ -429,7 +449,7 @@ class PreviewWindow:
             valid_counts = np.array(valid_counts)
             if len(valid_counts) > 0 and valid_counts.max() > 0:
                 # 使用中间有效区域的 95% 分位数作为参考上限
-                max_val_rgb = np.percentile(valid_counts, 95) * 1.5
+                max_val_rgb = np.percentile(valid_counts, 98) * 1.5
                 
                 # 保险逻辑：防止缩得太小，如果最大峰值太高，至少保证能看到它的 10%
                 absolute_max = max(h.max() for h in hists)
