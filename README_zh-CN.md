@@ -50,6 +50,10 @@
 | :---: | :---: |
 | ![机内直出](Samples/P1013122.jpg) | ![Raw Alchemy](Samples/Converted.jpg) |
 
+### 相关资源
+
+-   **[V-Log Alchemy](https://gitee.com/MinQ/V-Log-Alchemy)**: 一系列专门为 V-Log 色彩空间设计的 `.cube` LUT 文件集合。这些 LUT 可以直接在 Raw Alchemy 中应用，为您的工作流程实现各种创意风格。
+
 ### 快速入门 (推荐)
 
 对于大多数用户，使用 Raw Alchemy 最简单的方式是下载为您操作系统预编译的可执行文件。这无需安装 Python 或任何依赖。

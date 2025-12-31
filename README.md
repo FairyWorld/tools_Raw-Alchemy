@@ -50,6 +50,10 @@ Comparison with Panasonic Lumix Real-time LUT.
 | :---: | :---: |
 | ![In-Camera](Samples/P1013122.jpg) | ![Raw Alchemy](Samples/Converted.jpg) |
 
+### Related Resources
+
+-   **[V-Log Alchemy](https://github.com/shenmintao/V-Log-Alchemy)**: A curated collection of `.cube` LUT files specifically designed for V-Log color space. These LUTs can be directly applied in Raw Alchemy to achieve various creative looks for your workflow.
+
 ### Getting Started (Recommended)
 
 For most users, the easiest way to use Raw Alchemy is to download the pre-compiled executable. This does not require installing Python or any dependencies.
